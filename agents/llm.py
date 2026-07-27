@@ -17,23 +17,8 @@ GROQ_MODEL_NAME = "openai/gpt-oss-120b"
 MODEL = GroqModel(GROQ_MODEL_NAME, provider=GroqProvider(groq_client=_groq_client))
 
 
-def structured_completion(
-    system_prompt: str,
-    user_prompt: str,
-    schema_model,
-    schema_name: str,
-    max_completion_tokens: int = 4096,
-):
-    """
-    max_completion_tokens matters beyond just "enough room for the output" -
-    Groq's TPM rate limit counts the *requested* max completion tokens
-    against the budget upfront, before generation even starts (confirmed
-    directly against a live 413: requesting 16384 alone put a single call
-    over this account's 8000 TPM ceiling for openai/gpt-oss-120b, on top of
-    whatever the prompt itself costs). Callers with a small, fixed-shape
-    response (like the planner's Plan) should pass a much smaller value
-    than one generating a multi-file app.
-    """
+def structured_completion(system_prompt: str,user_prompt: str,schema_model,schema_name: str,max_completion_tokens: int = 4096,):
+    
     raw_schema = schema_model.model_json_schema()
     strict_schema = OpenAIJsonSchemaTransformer(raw_schema, strict=True).walk()
 

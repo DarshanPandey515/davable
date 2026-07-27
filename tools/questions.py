@@ -1,7 +1,0 @@
-
-
-
-
-
-def question():
-    pass

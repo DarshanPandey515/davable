@@ -187,6 +187,14 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
   const [clarificationAnswers, setClarificationAnswers] = useState({})
   const [isSubmittingClarification, setIsSubmittingClarification] = useState(false)
 
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [activeView, setActiveView] = useState('preview') // 'preview' | 'code'
+  const [files, setFiles] = useState([])
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [filesLoading, setFilesLoading] = useState(false)
+  const [filesError, setFilesError] = useState(null)
+
   const scrollRef = useRef(null)
   const startedRef = useRef(false)
   const abortControllerRef = useRef(null)
@@ -259,6 +267,13 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
         setIsWeaving(false);
         setShowClarification(false);
         if (data.conversation_id) setConversationId(data.conversation_id);
+        if (data.preview_url) {
+          setPreviewUrl(data.preview_url);
+          setRefreshKey((k) => k + 1);
+          // The file list may have changed (new/edited files) - drop the
+          // cached one so the Code tab refetches next time it's opened.
+          setFiles([]);
+        }
         if (buildStepsMsgIdRef.current) {
           const doneId = buildStepsMsgIdRef.current;
           setMessages((prev) => prev.map((m) =>
@@ -338,6 +353,10 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
         setResumedPrompt(data.original_prompt)
         setProjectName(deriveProjectName(data.original_prompt))
         setPreviewReady(!!data.project_id)
+        if (data.preview_url) {
+          setPreviewUrl(data.preview_url)
+          setRefreshKey((k) => k + 1)
+        }
 
         // Hidden messages (individual read/write/edit/bash tool-call steps)
         // were never shown in the live chat either - same filter here keeps
@@ -460,9 +479,48 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
     }
   }
 
+  const loadFiles = async () => {
+    if (!conversationId || filesLoading) return
+    setFilesLoading(true)
+    setFilesError(null)
+    try {
+      const response = await fetch(`${API_BASE}/conversations/${conversationId}/files/`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      })
+
+      if (response.status === 401) {
+        onAuthError?.()
+        return
+      }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      const fileList = data.files || []
+      setFiles(fileList)
+      setSelectedFile((prev) =>
+        fileList.some((f) => f.path === prev) ? prev : fileList[0]?.path || null
+      )
+    } catch (error) {
+      console.error('Error loading files:', error)
+      setFilesError(error.message || 'Failed to load files')
+    } finally {
+      setFilesLoading(false)
+    }
+  }
+
+  const handleViewChange = (view) => {
+    setActiveView(view)
+    if (view === 'code' && files.length === 0 && !filesLoading) {
+      loadFiles()
+    }
+  }
+
   const displayPrompt = initialPrompt || resumedPrompt
-  const previewSrcDoc = buildPreviewHtml(projectName, displayPrompt)
+  const fallbackPreviewSrcDoc = buildPreviewHtml(projectName, displayPrompt)
   const slug = projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'untitled'
+  const selectedFileContent = files.find((f) => f.path === selectedFile)?.content || ''
 
   const DeviceToggle = () => (
     <div className="flex items-center bg-(--bg-surface-2) rounded p-0.5 border border-(--border-hairline)">
@@ -601,46 +659,114 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
 
         <section className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} sm:flex flex-1 flex-col bg-(--bg-base) min-w-0`}>
           <div className="flex items-center gap-2 px-3 border-b border-(--border-hairline) shrink-0 h-8 bg-(--bg-base)">
-            <div className="flex-1 bg-(--bg-surface) rounded px-2 py-0.5 font-mono text-[10px] text-(--text-secondary) truncate border border-(--border-hairline)">
-              localhost:8000/{slug}
+            <div className="flex items-center bg-(--bg-surface-2) rounded p-0.5 border border-(--border-hairline) shrink-0">
+              {['preview', 'code'].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => handleViewChange(v)}
+                  className={`px-2 py-0.5 rounded-sm text-[9px] font-bold uppercase tracking-wider transition-colors ${activeView === v ? 'bg-(--bg-base) text-(--accent-gold)' : 'text-(--text-secondary) hover:text-(--text-primary)'}`}
+                >
+                  {v}
+                </button>
+              ))}
             </div>
-            <button
-              aria-label="Refresh"
-              className="p-1 text-(--text-secondary) hover:text-(--text-primary) transition-colors"
-            >
-              <RefreshCw className="w-3 h-3" />
-            </button>
-            <button
-              aria-label="Open tab"
-              className="p-1 text-(--text-secondary) hover:text-(--text-primary) transition-colors"
-            >
-              <ExternalLink className="w-3 h-3" />
-            </button>
+
+            {activeView === 'preview' ? (
+              <>
+                <div className="flex-1 bg-(--bg-surface) rounded px-2 py-0.5 font-mono text-[10px] text-(--text-secondary) truncate border border-(--border-hairline)">
+                  {previewUrl ? previewUrl.replace(/^https?:\/\//, '') : `localhost:8000/${slug}`}
+                </div>
+                <button
+                  onClick={() => setRefreshKey((k) => k + 1)}
+                  disabled={!previewUrl}
+                  aria-label="Refresh"
+                  className="p-1 text-(--text-secondary) hover:text-(--text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noopener,noreferrer')}
+                  disabled={!previewUrl}
+                  aria-label="Open tab"
+                  className="p-1 text-(--text-secondary) hover:text-(--text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              </>
+            ) : (
+              <div className="flex-1 font-mono text-[10px] text-(--text-secondary) truncate">
+                {selectedFile || 'Project files'}
+              </div>
+            )}
+
             <div className="sm:hidden">
               <DeviceToggle />
             </div>
           </div>
 
-          <div className="flex-1 p-2.5 bg-(--bg-surface-2) flex items-center justify-center overflow-hidden">
-            {previewReady ? (
-              device === 'mobile' ? (
-                <div className="border-[4px] border-(--bg-surface) rounded-lg overflow-hidden h-full max-h-[500px] w-[260px] shadow-md bg-white">
-                  <iframe title="Preview" srcDoc={previewSrcDoc} className="w-full h-full" />
-                </div>
-              ) : (
-                <div className="w-full h-full rounded overflow-hidden border border-(--border-hairline) bg-white shadow-sm">
-                  <iframe title="Preview" srcDoc={previewSrcDoc} className="w-full h-full" />
-                </div>
-              )
-            ) : (
-              <div className="w-full h-full rounded border border-dashed border-(--border-hairline) flex flex-col items-center justify-center p-4 text-center bg-(--bg-base)">
-                <ThreadField className="opacity-5 w-6 h-6 mb-1.5" />
-                <p className="text-[10px] font-mono text-(--text-secondary) tracking-tight max-w-[180px] leading-normal">
-                  {isWeaving ? 'Building preview...' : 'Ready. Type a response to generate.'}
-                </p>
+          {activeView === 'code' ? (
+            <div className="flex-1 flex overflow-hidden bg-(--bg-surface-2)">
+              <div className="w-32 shrink-0 border-r border-(--border-hairline) overflow-y-auto bg-(--bg-base)">
+                {filesLoading && (
+                  <p className="p-2 text-[10px] font-mono text-(--text-secondary)">Loading files...</p>
+                )}
+                {filesError && (
+                  <p className="p-2 text-[10px] font-mono text-red-400">{filesError}</p>
+                )}
+                {!filesLoading && !filesError && files.length === 0 && (
+                  <p className="p-2 text-[10px] font-mono text-(--text-secondary)">No files yet.</p>
+                )}
+                {files.map((f) => (
+                  <button
+                    key={f.path}
+                    onClick={() => setSelectedFile(f.path)}
+                    title={f.path}
+                    className={`block w-full text-left px-2 py-1 text-[10px] font-mono truncate transition-colors ${
+                      selectedFile === f.path
+                        ? 'bg-(--bg-surface-2) text-(--accent-gold)'
+                        : 'text-(--text-secondary) hover:text-(--text-primary)'
+                    }`}
+                  >
+                    {f.path}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
+              <pre className="flex-1 overflow-auto p-3 text-[10px] font-mono text-(--text-primary) leading-normal whitespace-pre-wrap break-words">
+                {selectedFileContent || 'Select a file to view its contents.'}
+              </pre>
+            </div>
+          ) : (
+            <div className="flex-1 p-2.5 bg-(--bg-surface-2) flex items-center justify-center overflow-hidden">
+              {previewReady && previewUrl ? (
+                device === 'mobile' ? (
+                  <div className="border-[4px] border-(--bg-surface) rounded-lg overflow-hidden h-full max-h-[500px] w-[260px] shadow-md bg-white">
+                    <iframe key={refreshKey} title="Preview" src={previewUrl} className="w-full h-full" />
+                  </div>
+                ) : (
+                  <div className="w-full h-full rounded overflow-hidden border border-(--border-hairline) bg-white shadow-sm">
+                    <iframe key={refreshKey} title="Preview" src={previewUrl} className="w-full h-full" />
+                  </div>
+                )
+              ) : previewReady ? (
+                device === 'mobile' ? (
+                  <div className="border-[4px] border-(--bg-surface) rounded-lg overflow-hidden h-full max-h-[500px] w-[260px] shadow-md bg-white">
+                    <iframe title="Preview" srcDoc={fallbackPreviewSrcDoc} className="w-full h-full" />
+                  </div>
+                ) : (
+                  <div className="w-full h-full rounded overflow-hidden border border-(--border-hairline) bg-white shadow-sm">
+                    <iframe title="Preview" srcDoc={fallbackPreviewSrcDoc} className="w-full h-full" />
+                  </div>
+                )
+              ) : (
+                <div className="w-full h-full rounded border border-dashed border-(--border-hairline) flex flex-col items-center justify-center p-4 text-center bg-(--bg-base)">
+                  <ThreadField className="opacity-5 w-6 h-6 mb-1.5" />
+                  <p className="text-[10px] font-mono text-(--text-secondary) tracking-tight max-w-[180px] leading-normal">
+                    {isWeaving ? 'Building preview...' : 'Ready. Type a response to generate.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       </div>
 

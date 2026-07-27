@@ -15,4 +15,6 @@ urlpatterns = [
     path("followup/", views.FollowUpView.as_view(), name="followup"),
     path("conversations/", views.ConversationListView.as_view(), name="conversation_list"),
     path("conversations/<str:conversation_id>/", views.ConversationDetailView.as_view(), name="conversation_detail"),
+    path("conversations/<str:conversation_id>/files/", views.ConversationFilesView.as_view()),
 ]
+

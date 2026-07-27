@@ -147,6 +147,7 @@ class ChatView(APIView):
                     "message": result.get("message"),
                     "project_id": result.get("project_id"),
                     "project_path": result.get("project_path"),
+                    "preview_url": result.get("preview_url"),
                     "conversation_id": conversation_id,
                 })
 
@@ -181,6 +182,48 @@ class ConversationDetailView(APIView):
         return Response(conversation)
 
 
+class ConversationFilesView(APIView):
+
+    SKIP_DIR_NAMES = {"node_modules", ".git", "dist", "build", ".vite"}
+    MAX_FILE_BYTES = 200_000  
+
+    def get(self, request, conversation_id):
+        conversation = state.get_conversation(conversation_id)
+        if not conversation:
+            return Response({"detail": "Conversation not found"}, status=404)
+        if conversation["user_id"] != str(request.user.id):
+            return Response({"detail": "Not your conversation"}, status=403)
+
+        project_id = conversation.get("project_id")
+        if not project_id:
+            return Response({"detail": "This conversation doesn't have a built project yet"}, status=400)
+
+        from agents.project_manager import project_manager
+
+        try:
+            project_path = project_manager.get_project_path(project_id)
+        except FileNotFoundError:
+            return Response({"detail": "Project files not found"}, status=404)
+
+        files = []
+        for path in sorted(project_path.rglob("*")):
+            if not path.is_file():
+                continue
+            rel_parts = path.relative_to(project_path).parts
+            if any(part in self.SKIP_DIR_NAMES for part in rel_parts):
+                continue
+            try:
+                if path.stat().st_size > self.MAX_FILE_BYTES:
+                    continue
+                content = path.read_text(errors="replace")
+            except OSError:
+                continue
+
+            files.append({"path": "/".join(rel_parts), "content": content})
+
+        return Response({"files": files})
+
+
 class QuestionsView(APIView):
     def post(self, request):
         serializer = QuestionsSerializer(data=request.data)
@@ -208,6 +251,7 @@ class QuestionsView(APIView):
                     "message": result.get("message"),
                     "project_id": result.get("project_id"),
                     "project_path": result.get("project_path"),
+                    "preview_url": result.get("preview_url"),
                     "conversation_id": conversation_id,
                 })
 
@@ -239,6 +283,7 @@ class FollowUpView(APIView):
                     "message": result.get("message"),
                     "project_id": result.get("project_id"),
                     "project_path": result.get("project_path"),
+                    "preview_url": result.get("preview_url"),
                     "conversation_id": conversation_id,
                 })
 

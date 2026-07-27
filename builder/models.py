@@ -62,9 +62,11 @@ class Conversation(models.Model):
     todos = models.JSONField(default=list)
     project_id = models.CharField(max_length=64, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    preview_url = models.URLField(max_length=500, null=True, blank=True)
 
 
 class ConversationMessage(models.Model):
+    
     class MessageType(models.TextChoices):
         TOOL_CALL = "tool_call", "Tool call"
         TEXT_MESSAGE = "text_message", "Text message"

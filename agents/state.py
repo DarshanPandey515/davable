@@ -45,6 +45,15 @@ def update_todos(conversation_id: str, todos: list):
     return _serialize(convo)
 
 
+def update_preview_url(conversation_id: str, preview_url: Optional[str]):
+    convo = Conversation.objects.filter(id=conversation_id).first()
+    if not convo:
+        return None
+    convo.preview_url = preview_url
+    convo.save()
+    return _serialize(convo)
+
+
 def add_conversation_message(
     conversation_id: str,
     role: str,
@@ -93,4 +102,5 @@ def _serialize(convo: Conversation) -> dict:
         ],
         "todos": convo.todos or [],
         "project_id": convo.project_id,
+        "preview_url": convo.preview_url,
     }

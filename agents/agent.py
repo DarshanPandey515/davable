@@ -21,6 +21,7 @@ from .state import (
     add_conversation_message,
     update_conversation_status,
     update_todos,
+    update_preview_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,11 +75,6 @@ fixer_agent = Agent(
     system_prompt=FIXER_SYSTEM_PROMPT,
     output_type=str,
     retries=2,
-    # This call goes through pydantic-ai directly rather than
-    # structured_completion() (see llm.py), so it had no explicit token cap
-    # at all - equally exposed to the account's 8000 TPM ceiling once
-    # several fixer turns land in the same rolling minute as the
-    # planner/codegen calls that kicked off the build.
     model_settings=ModelSettings(max_tokens=2048),
     capabilities=[
         ProcessHistory(
@@ -119,13 +115,6 @@ def write(ctx: RunContext[FixDeps], path: str, content: str) -> str:
 
 @fixer_agent.tool
 def edit(ctx: RunContext[FixDeps], path: str, old_text: str, new_text: str) -> str:
-    """Replace one exact snippet of text in an existing file with new text.
-
-    Args:
-        path: Path to the file, relative to the project root.
-        old_text: The exact existing text to find (must match exactly, including whitespace).
-        new_text: The text to replace it with.
-    """
     _note_step(ctx.deps, f"Editing: {path}", tool_call="edit")
     try:
         result = edit_file(path, old_text, new_text)
@@ -138,20 +127,11 @@ def edit(ctx: RunContext[FixDeps], path: str, old_text: str, new_text: str) -> s
 
 @fixer_agent.tool
 def bash(ctx: RunContext[FixDeps], command: str) -> dict:
-    """Run a shell command in the project's root directory (e.g. npm run build).
-
-    Args:
-        command: The shell command to run.
-    """
     _note_step(ctx.deps, f"Running: {command}", tool_call="bash")
     return run_command(command)
 
 
 def _is_daily_quota_error(e: Exception) -> bool:
-    """Groq's per-minute (TPM) limits recover within seconds and are worth
-    retrying. Per-day (TPD) limits don't recover until the next day - a
-    retry loop against that error just wastes more of an already-exhausted
-    budget, so it needs to be detected and treated as fatal, not transient."""
     text = str(e).lower()
     return "tpd" in text or "per day" in text or "tokens per day" in text
 
@@ -160,13 +140,12 @@ def _is_transient_api_error(e: Exception) -> bool:
     if isinstance(e, ModelAPIError):
         return not _is_daily_quota_error(e)
     if isinstance(e, ModelHTTPError):
-        # Rate-limit HTTP errors (429) are only worth retrying if they're not
-        # the daily quota - a 429 body can carry either TPM or TPD.
         return e.status_code == 429 and not _is_daily_quota_error(e)
     return False
 
 
-VITE_CONFIG_CONTENT = """import { defineConfig } from 'vite'
+VITE_CONFIG_CONTENT = """
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -177,25 +156,13 @@ export default defineConfig({
 
 
 def scaffold_project() -> dict:
-    """Deterministic project setup - no LLM call needed for this, it's the
-    same fixed commands on every build, so there's no reason to spend a
-    request (and its retry budget) on the model deciding to run them.
-
-    Installs everything the generated code always assumes exists
-    (react-router-dom, Tailwind v4 via its Vite plugin) and wires the
-    Tailwind plugin into vite.config.js directly here, rather than leaving
-    either to the model. A missing dependency isn't something the fixer
-    reliably catches - it doesn't know to reach for `npm install` on a
-    "cannot resolve import" error unless told to, and by the time it's
-    re-reading files hoping to spot a code bug that isn't there, it's
-    already burned through its step budget without ever running it.
-    """
     steps = [
         "npm create vite@latest . -- --template react --no-interactive",
         "npm install",
         "npm install react-router-dom",
         "npm install tailwindcss @tailwindcss/vite",
     ]
+    
     for cmd in steps:
         result = run_command(cmd)
         if not result.get("success", True):
@@ -215,12 +182,6 @@ def check_build() -> dict:
 
 
 def run_fixer(instruction: str, notify: Callable[[str, dict], None], conversation_id: Optional[str] = None) -> str:
-    """Bounded, tool-based correction/edit loop against whatever project is
-    currently active in project_manager. Used both for post-build error
-    correction and for follow-up change requests (run_followup below) -
-    both are really the same task: make a small, targeted change to an
-    existing codebase using read/write/edit/bash, then verify with a
-    build."""
     deps = FixDeps(notify=notify, conversation_id=conversation_id)
     result = fixer_agent.run_sync(
         instruction,
@@ -231,12 +192,6 @@ def run_fixer(instruction: str, notify: Callable[[str, dict], None], conversatio
 
 
 def run_followup(prompt: str, conversation_id: str, project_id: str, notify: Callable[[str, dict], None]) -> dict:
-    """Apply a user-requested change to an already-built project. Reuses the
-    fixer's read/write/edit/bash loop instead of teaching codegen to do
-    incremental edits - codegen only knows how to generate a whole app from
-    scratch, but the fixer is already built for exactly this: small,
-    targeted changes to an existing codebase, just triggered by a feature
-    request instead of a failed build."""
     update_conversation_status(conversation_id, "updating")
     add_conversation_message(conversation_id, "user", prompt)
     notify("status", {"type": "updating", "message": "Applying your change..."})
@@ -262,6 +217,8 @@ def run_followup(prompt: str, conversation_id: str, project_id: str, notify: Cal
         message = f"Couldn't apply that change: {e}"
         success = False
 
+    preview_url = _start_preview_server(notify, conversation_id) if success else None
+
     add_conversation_message(conversation_id, "assistant", message)
     update_conversation_status(conversation_id, "complete")
 
@@ -270,13 +227,11 @@ def run_followup(prompt: str, conversation_id: str, project_id: str, notify: Cal
         "message": message,
         "project_id": project_id,
         "project_path": str(project_manager.active_project_path),
+        "preview_url": preview_url,
     }
 
 
 def _run_with_retry(run_fn, notify: Callable[[str, dict], None], label: str):
-    """Run a single LLM call/loop with a bounded retry, but only for
-    transient errors - a daily-quota error fails immediately since retrying
-    it cannot succeed until quota resets."""
     last_error = None
     for attempt in range(1, MAX_RUN_ATTEMPTS + 1):
         try:
@@ -386,6 +341,8 @@ def run_agent(prompt, conversation_id=None, emit=None):
         notify("error", {"error": f"API Error: {str(e)}"})
         return {"success": False, "message": f"API Error: {str(e)}", "project_id": project_id}
 
+    preview_url = _start_preview_server(notify, conversation_id)
+
     if conversation_id:
         add_conversation_message(conversation_id, "assistant", message)
         update_conversation_status(conversation_id, "complete")
@@ -394,5 +351,21 @@ def run_agent(prompt, conversation_id=None, emit=None):
         "success": True,
         "message": message,
         "project_id": project_id,
-        "project_path": str(project_path)
+        "project_path": str(project_path),
+        "preview_url": preview_url,
     }
+
+
+def _start_preview_server(notify: Callable[[str, dict], None], conversation_id: Optional[str] = None) -> Optional[str]:
+    try:
+        url = project_manager.start_server()
+        notify("status", {"type": "server_started", "message": f"Preview ready at {url}"})
+        if conversation_id:
+            update_preview_url(conversation_id, url)
+        return url
+    except Exception as e:
+        logger.warning(f"Could not start dev server: {e}")
+        notify("status", {"type": "server_start_failed", "message": "Build succeeded but the preview server failed to start"})
+        if conversation_id:
+            update_preview_url(conversation_id, None)
+        return None
