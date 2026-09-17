@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ThreadField, ArrowRight } from './Icons'
+import { ThreadMark, ArrowRight } from '../icons'
+import { Button, SpinLoader } from '../ui'
 import { listConversations } from '../api'
 
 function timeAgo(isoString) {
@@ -41,92 +42,97 @@ export default function Home({ onStart, onResume, onLogout }) {
     }
   }
 
-  const useStarter = (text) => {
-    setPrompt(text)
-    textareaRef.current?.focus()
-  }
-
   return (
-    <div className="h-screen w-full bg-(--bg-base) text-(--text-primary) font-mono flex flex-col justify-between p-4 overflow-hidden text-xs select-none animate-fade-in">
-      <header className="flex items-center justify-between border-b border-(--border-hairline) pb-2 shrink-0">
-        <span className="font-bold tracking-tight text-xs">Davable</span>
+    <div className="flex h-screen w-full flex-col bg-white font-sans text-neutral-900">
+      <header className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-4 py-3 md:px-6">
+        <div className="flex items-center gap-2">
+          <ThreadMark className="size-5 text-neutral-900" />
+          <span className="font-serif text-lg leading-none">Davable</span>
+        </div>
         {onLogout && (
-          <button
-            onClick={onLogout}
-            className="text-(--text-secondary) hover:text-(--text-primary) transition-colors text-[10px] uppercase tracking-wider"
-          >
+          <Button variant="ghost" size="sm" onClick={onLogout}>
             Log out
-          </button>
+          </Button>
         )}
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center max-w-md w-full mx-auto space-y-4 my-auto overflow-hidden">
-        <div className="w-full text-center space-y-1 relative flex flex-col items-center shrink-0">
-          <ThreadField className="opacity-10 w-8 h-8 mb-1 animate-pulse" />
-          <h1 className="text-sm font-bold text-balance">
-            Describe app to weave systems.
-          </h1>
-        </div>
-
-        <div className="w-full bg-(--bg-surface) border border-(--border-hairline) rounded p-2 transition-all duration-200 focus-within:border-(--accent-gold) shrink-0">
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={2}
-            disabled={isLoading}
-            placeholder="Describe your idea..."
-            className="w-full bg-transparent resize-none outline-none placeholder:text-(--text-secondary) text-xs p-1 disabled:opacity-50 min-h-10"
-          />
-          <div className="flex items-center justify-between pt-1.5 border-t border-(--border-hairline)/40 mt-1">
-            <span className="text-[10px] text-(--text-secondary) px-1">
-              {isLoading ? 'Compiling framework' : 'Ready'}
-            </span>
-            <button
-              onClick={submit}
-              disabled={!prompt.trim() || isLoading}
-              className="flex items-center gap-1.5 bg-(--accent-gold) disabled:opacity-20 text-[#1B1918] font-medium text-[11px] px-2.5 py-1 rounded transition-all active:scale-[0.98]"
-            >
-              <span>{isLoading ? 'Weaving' : 'Execute'}</span>
-              <ArrowRight className={`w-3 h-3 stroke-[2.5] ${isLoading ? 'animate-bounce' : ''}`} />
-            </button>
+      <main className="flex flex-1 justify-center overflow-y-auto px-4 py-10 md:px-6 md:py-16">
+        <div className="animate-enter w-full max-w-xl space-y-8 self-center">
+          <div className="space-y-3">
+            <p className="font-mono text-[10px] tracking-[0.18em] text-neutral-400 uppercase">
+              AI app builder
+            </p>
+            <h1 className="font-serif text-3xl leading-tight text-balance md:text-4xl">
+              Describe the app you want to weave.
+            </h1>
+            <p className="max-w-md text-sm leading-relaxed text-neutral-500">
+              Give a prompt and the agent plans, builds, and debugs a working React app. Refine it in plain language.
+            </p>
           </div>
-        </div>
 
-        {!sessionsLoading && sessions.length > 0 && (
-          <div className="w-full flex flex-col min-h-0">
-            <span className="text-[10px] text-(--text-secondary) uppercase tracking-wider px-0.5 mb-1 shrink-0">
-              Past sessions
-            </span>
-            <div className="overflow-y-auto space-y-1 thin-scroll pr-0.5">
-              {sessions.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => onResume(s.id)}
-                  className="w-full text-left bg-(--bg-surface) border border-(--border-hairline) hover:border-(--accent-gold)/60 rounded px-2 py-1.5 transition-colors flex items-center gap-2"
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      s.status === 'complete' ? 'bg-(--accent-teal)' : 'bg-(--accent-gold)'
-                    }`}
-                  />
-                  <span className="flex-1 truncate text-[11px] text-(--text-primary)">{s.original_prompt}</span>
-                  <span className="text-[9px] text-(--text-secondary) shrink-0">{timeAgo(s.created_at)}</span>
-                </button>
-              ))}
+          <div className="rounded-2xl border border-neutral-100 bg-white p-4">
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={3}
+              autoFocus
+              disabled={isLoading}
+              maxLength={500}
+              placeholder="e.g. a habit tracker with weekly streaks"
+              aria-label="Describe your app"
+              className="w-full resize-none bg-transparent text-sm leading-relaxed text-neutral-900 outline-none placeholder:text-neutral-400 disabled:opacity-50"
+            />
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-neutral-100 pt-3">
+              <span className="flex items-center gap-2 font-mono text-[10px] tracking-tight text-neutral-400">
+                {isLoading ? <SpinLoader size="sm" label="Starting" /> : null}
+                {isLoading ? 'Planning' : 'Ready'}
+              </span>
+              <Button size="md" onClick={submit} disabled={!prompt.trim() || isLoading}>
+                {isLoading ? 'Weaving' : 'Weave'}
+                <ArrowRight className="size-3.5" />
+              </Button>
             </div>
           </div>
-        )}
-      </main>
 
-      <style>{`
-        @keyframes containerReveal {
-          from { opacity: 0; transform: translateY(4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in { animation: containerReveal 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-      `}</style>
+          <section className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-xs font-semibold tracking-tight text-neutral-900">Past sessions</h2>
+              {sessionsLoading ? <SpinLoader size="sm" label="Loading sessions" /> : null}
+            </div>
+
+            {!sessionsLoading && sessions.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center text-xs text-neutral-400">
+                No sessions yet. Your builds will show up here.
+              </p>
+            ) : (
+              <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-100">
+                {sessions.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => onResume(s.id)}
+                      className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-900"
+                    >
+                      <span
+                        className={`size-1.5 shrink-0 rounded-full ${
+                          s.status === 'complete' ? 'bg-emerald-500' : 'bg-amber-400'
+                        }`}
+                        aria-hidden
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm text-neutral-700">
+                        {s.original_prompt}
+                      </span>
+                      <span className="shrink-0 font-mono text-[10px] text-neutral-400">{timeAgo(s.created_at)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </main>
     </div>
   )
 }

@@ -1,15 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   ThreadMark,
-  ThreadField,
   ChevronLeft,
   Monitor,
   Smartphone,
   RefreshCw,
   ExternalLink,
-  Check,
-  ArrowRight,
-} from './Icons'
+  Send,
+} from '../icons'
+import { Button, SegmentedControl, SpinLoader, SystemAlert, TextField, BuildSteps } from '../ui'
 
 import { API_BASE, getToken, getConversation } from '../api'
 
@@ -66,7 +65,7 @@ function buildPreviewHtml(projectName, prompt) {
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
-    color: #1F2430;
+    color: #171717;
     background: #FFFFFF;
   }
   header {
@@ -74,26 +73,26 @@ function buildPreviewHtml(projectName, prompt) {
     align-items: center;
     justify-content: space-between;
     padding: 14px 20px;
-    border-bottom: 1px solid #ECEAE6;
+    border-bottom: 1px solid #E5E5E5;
   }
-  .brand { font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
-  nav a { color: #6B7280; text-decoration: none; font-size: 12px; margin-left: 14px; }
+  .brand { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+  nav a { color: #737373; text-decoration: none; font-size: 12px; margin-left: 14px; }
   .cta {
-    background: #1F2430; color: #fff; border: none; border-radius: 6px;
+    background: #262626; color: #fff; border: none; border-radius: 6px;
     padding: 6px 12px; font-size: 12px; cursor: pointer;
   }
   main { padding: 40px 20px; text-align: center; max-width: 600px; margin: 0 auto; }
-  .eyebrow { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #C2884B; font-weight: 600; }
+  .eyebrow { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #0891B2; font-weight: 600; }
   h1 { font-size: 28px; line-height: 1.2; margin: 12px 0; letter-spacing: -0.01em; }
-  p.sub { color: #6B7280; font-size: 14px; line-height: 1.5; margin: 0 auto 20px; max-width: 440px; }
+  p.sub { color: #737373; font-size: 14px; line-height: 1.5; margin: 0 auto 20px; max-width: 440px; }
   .btn-row { display: flex; gap: 8px; justify-content: center; }
-  .primary { background: #1F2430; color: #fff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; cursor: pointer; }
-  .secondary { background: #fff; color: #1F2430; border: 1px solid #ECEAE6; border-radius: 6px; padding: 10px 16px; font-size: 13px; cursor: pointer; }
+  .primary { background: #262626; color: #fff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; cursor: pointer; }
+  .secondary { background: #fff; color: #171717; border: 1px solid #E5E5E5; border-radius: 6px; padding: 10px 16px; font-size: 13px; cursor: pointer; }
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 40px; }
-  .card { border: 1px solid #ECEAE6; border-radius: 8px; padding: 14px; text-align: left; }
-  .card .num { font-size: 10px; color: #C2884B; font-weight: 700; }
+  .card { border: 1px solid #E5E5E5; border-radius: 8px; padding: 14px; text-align: left; }
+  .card .num { font-size: 10px; color: #0891B2; font-weight: 700; }
   .card h3 { font-size: 13px; margin: 6px 0 2px; }
-  .card p { font-size: 12px; color: #6B7280; margin: 0; line-height: 1.4; }
+  .card p { font-size: 12px; color: #737373; margin: 0; line-height: 1.4; }
   @media (max-width: 480px) { .cards { grid-template-columns: 1fr; } h1 { font-size: 22px; } }
 </style>
 </head>
@@ -124,50 +123,51 @@ function buildPreviewHtml(projectName, prompt) {
 </html>`
 }
 
-function BuildSteps({ steps }) {
+const DEVICE_OPTIONS = [
+  { value: 'desktop', ariaLabel: 'Desktop view', icon: <Monitor className="size-3.5" /> },
+  { value: 'mobile', ariaLabel: 'Mobile view', icon: <Smartphone className="size-3.5" /> },
+]
+
+function DeviceToggle({ value, onChange }) {
   return (
-    <div className="space-y-0.5 font-mono text-[10px] tracking-tight leading-none text-(--text-secondary) my-1">
-      {steps.map((step, i) => {
-        const isActive = !step.done && steps.slice(0, i).every((s) => s.done)
-        return (
-          <div
-            key={step.label}
-            className="flex items-center gap-1.5"
-            style={{
-              animation: 'fadeIn 0.1s ease-out backwards',
-              animationDelay: `${i * 20}ms`
-            }}
-          >
-            <span className={step.done ? 'text-(--accent-teal)' : isActive ? 'text-(--accent-gold) animate-pulse' : 'text-(--text-secondary)/40'}>
-              {step.done ? '[done]' : isActive ? '[busy]' : '[wait]'}
-            </span>
-            <span className="text-(--text-secondary)/30">::</span>
-            <span className={step.done ? 'text-(--text-secondary)/60 line-through' : isActive ? 'text-(--text-primary) font-medium' : 'text-(--text-secondary)'}>
-              {step.label}
-            </span>
-          </div>
-        )
-      })}
-    </div>
+    <SegmentedControl
+      ariaLabel="Preview device"
+      size="sm"
+      options={DEVICE_OPTIONS}
+      value={value}
+      onChange={onChange}
+    />
   )
 }
 
-function ChatBubble({ message }) {
+function Message({ message }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end animate-fade-in">
-        <div className="max-w-[95%] bg-(--bg-surface-2) text-(--text-primary) text-[11px] font-mono px-2 py-1 border border-(--border-hairline) rounded-sm">
-          &gt; {message.text}
+      <div className="animate-enter flex justify-end">
+        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-neutral-900 px-3.5 py-2 text-sm leading-relaxed text-white">
+          {message.text}
         </div>
       </div>
     )
   }
+
+  const isError = typeof message.text === 'string' && message.text.startsWith('Error:')
+
   return (
-    <div className="animate-fade-in space-y-1 py-0.5">
-      {message.steps && <BuildSteps steps={message.steps} />}
-      {message.text && (
-        <p className="text-[11px] font-mono text-(--text-primary) leading-normal">{message.text}</p>
-      )}
+    <div className="animate-enter flex gap-2.5">
+      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-neutral-100 bg-neutral-50">
+        <ThreadMark className="size-3.5 text-neutral-500" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-2">
+        {message.steps ? <BuildSteps steps={message.steps} /> : null}
+        {message.text ? (
+          isError ? (
+            <SystemAlert tone="error" description={message.text.replace(/^Error:\s*/, '')} />
+          ) : (
+            <p className="text-sm leading-relaxed text-neutral-700">{message.text}</p>
+          )
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -522,246 +522,233 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
   const slug = projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'untitled'
   const selectedFileContent = files.find((f) => f.path === selectedFile)?.content || ''
 
-  const DeviceToggle = () => (
-    <div className="flex items-center bg-(--bg-surface-2) rounded p-0.5 border border-(--border-hairline)">
-      <button
-        onClick={() => setDevice('desktop')}
-        aria-label="Desktop view"
-        className={`p-1 rounded-sm transition-colors ${device === 'desktop' ? 'bg-(--bg-base) text-(--accent-gold)' : 'text-(--text-secondary) hover:text-(--text-primary)'}`}
-      >
-        <Monitor className="w-3 h-3" />
-      </button>
-      <button
-        onClick={() => setDevice('mobile')}
-        aria-label="Mobile view"
-        className={`p-1 rounded-sm transition-colors ${device === 'mobile' ? 'bg-(--bg-base) text-(--accent-gold)' : 'text-(--text-secondary) hover:text-(--text-primary)'}`}
-      >
-        <Smartphone className="w-3 h-3" />
-      </button>
-    </div>
-  )
-
   const renderClarification = () => {
     if (!showClarification || !clarificationQuestions.length) return null
 
     return (
-      <div className="bg-(--bg-surface) border border-(--accent-gold)/40 rounded p-2.5 space-y-2 font-mono">
-        <h3 className="text-[10px] font-bold uppercase tracking-wider text-(--text-primary)">Clarify specs:</h3>
+      <div className="animate-enter space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+        <div>
+          <h3 className="text-xs font-semibold tracking-tight text-neutral-900">A few details</h3>
+          <p className="mt-0.5 text-xs text-neutral-500">Answer the prompts so the build can continue.</p>
+        </div>
         {clarificationQuestions.map((q, idx) => (
-          <div key={idx} className="space-y-1">
-            <label className="text-[10px] text-(--text-secondary) block truncate">&gt; {q}</label>
-            <input
-              type="text"
-              value={clarificationAnswers[idx] || ''}
-              onChange={(e) => setClarificationAnswers({
-                ...clarificationAnswers,
-                [idx]: e.target.value
-              })}
-              className="w-full bg-(--bg-base) border border-(--border-hairline) rounded px-2 py-0.5 text-xs font-mono focus:outline-none focus:border-(--accent-gold) text-(--text-primary)"
-              placeholder="Type response..."
-              disabled={isSubmittingClarification}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleClarificationSubmit()
-                }
-              }}
-            />
-          </div>
+          <TextField
+            key={idx}
+            label={q}
+            required
+            value={clarificationAnswers[idx] || ''}
+            onChange={(e) => setClarificationAnswers({
+              ...clarificationAnswers,
+              [idx]: e.target.value
+            })}
+            placeholder="Your answer"
+            disabled={isSubmittingClarification}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleClarificationSubmit()
+              }
+            }}
+          />
         ))}
-        <button
+        <Button
+          className="w-full"
           onClick={handleClarificationSubmit}
           disabled={isSubmittingClarification}
-          className="w-full bg-(--accent-gold) text-[#1B1918] py-1 rounded text-[10px] font-bold uppercase tracking-wider hover:opacity-90 transition disabled:opacity-40"
         >
-          {isSubmittingClarification ? 'Sending...' : 'Apply settings'}
-        </button>
+          {isSubmittingClarification ? 'Sending' : 'Apply answers'}
+        </Button>
+      </div>
+    )
+  }
+
+  const previewFrame = (src, isSrcDoc = false) => {
+    const iframeProps = isSrcDoc ? { srcDoc: src } : { src }
+    if (device === 'mobile') {
+      return (
+        <div className="h-full max-h-[560px] w-[268px] overflow-hidden rounded-[2rem] border-[6px] border-neutral-900 bg-white">
+          <iframe key={refreshKey} title="Preview" className="h-full w-full" {...iframeProps} />
+        </div>
+      )
+    }
+    return (
+      <div className="h-full w-full overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        <iframe key={refreshKey} title="Preview" className="h-full w-full" {...iframeProps} />
       </div>
     )
   }
 
   return (
-    <div className="h-screen w-full bg-(--bg-base) text-(--text-primary) font-mono flex flex-col overflow-hidden text-xs">
-      <header className="flex items-center gap-2 px-3 h-10 border-b border-(--border-hairline) shrink-0 bg-(--bg-base)">
-        <button
-          onClick={handleBack}
-          aria-label="Back"
-          className="p-1 rounded text-(--text-secondary) hover:text-(--text-primary) transition-colors"
-        >
-          <ChevronLeft className="w-3.5 h-3.5" />
-        </button>
+    <div className="flex h-screen w-full flex-col bg-white font-sans text-neutral-900">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-neutral-100 px-3 md:px-4">
+        <Button variant="ghost" size="icon" onClick={handleBack} aria-label="Back">
+          <ChevronLeft className="size-4" />
+        </Button>
         <input
           value={projectName}
           onChange={(e) => setProjectName(e.target.value)}
-          className="font-mono text-xs bg-transparent outline-none text-(--text-primary) w-36 focus:border-b border-(--accent-gold) px-0.5"
+          aria-label="Project name"
+          className="w-40 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-medium outline-none transition-colors hover:border-neutral-200 focus:border-neutral-900 md:w-56"
         />
         <div className="flex-1" />
-        <div className="hidden sm:block">
-          <DeviceToggle />
+        <div className="hidden md:block">
+          <DeviceToggle value={device} onChange={setDevice} />
         </div>
-        <button
-          disabled={!previewReady}
-          className="font-bold text-[10px] px-2.5 h-6 rounded bg-(--accent-gold) text-[#1B1918] disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-wider transition"
-        >
+        <Button size="sm" disabled={!previewReady}>
           Publish
-        </button>
+        </Button>
       </header>
 
-      <div className="flex sm:hidden border-b border-(--border-hairline) shrink-0 bg-(--bg-base)">
+      <div className="flex shrink-0 border-b border-neutral-100 md:hidden">
         {['chat', 'preview'].map((tab) => (
           <button
             key={tab}
+            type="button"
             onClick={() => setMobileTab(tab)}
-            className={`flex-1 text-center py-1.5 text-[10px] uppercase tracking-wider transition-colors ${mobileTab === tab ? 'text-(--accent-gold) font-bold border-b border-(--accent-gold)' : 'text-(--text-secondary)'}`}
+            className={`flex-1 cursor-pointer py-2.5 text-xs font-medium capitalize transition-colors ${
+              mobileTab === tab
+                ? 'border-b-2 border-neutral-900 text-neutral-900'
+                : 'text-neutral-400'
+            }`}
           >
             {tab}
           </button>
         ))}
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        <section className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} sm:flex flex-col w-full sm:w-[260px] md:w-[300px] border-r border-(--border-hairline) shrink-0 bg-(--bg-base)`}>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-none">
+      <div className="flex flex-1 overflow-hidden">
+        <section
+          className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} w-full shrink-0 flex-col border-neutral-100 bg-white md:flex md:w-[320px] md:border-r lg:w-[380px]`}
+        >
+          <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-4">
             {messages.map((m) => (
-              <ChatBubble key={m.id} message={m} />
+              <Message key={m.id} message={m} />
             ))}
             {renderClarification()}
             {isWeaving && !showClarification && (
-              <div className="flex items-center gap-1.5 text-[10px] font-mono text-(--text-secondary) opacity-70">
-                <span className="w-1 h-1 rounded-full bg-(--accent-teal) animate-ping" />
-                <span>Loading updates...</span>
+              <div className="flex items-center gap-2 text-xs text-neutral-400">
+                <SpinLoader size="sm" label="Working" />
+                <span>Working…</span>
               </div>
             )}
           </div>
 
-          <div className="p-2 border-t border-(--border-hairline) bg-(--bg-base)">
-            <div className="flex items-center gap-1.5 bg-(--bg-surface) border border-(--border-hairline) rounded px-2 py-1">
+          <div className="border-t border-neutral-100 p-3">
+            <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 transition-colors focus-within:border-neutral-900">
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={isWeaving || showClarification}
-                placeholder={isWeaving ? 'Processing...' : showClarification ? 'Awaiting response...' : 'Type a message...'}
-                className="flex-1 bg-transparent outline-none text-[11px] font-mono placeholder:text-(--text-secondary)/60 disabled:opacity-40"
+                placeholder={
+                  isWeaving ? 'Processing…' : showClarification ? 'Awaiting answers…' : 'Ask for a change…'
+                }
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-neutral-400 disabled:opacity-50"
               />
-              <button
+              <Button
+                size="icon"
                 onClick={showClarification ? handleClarificationSubmit : handleSend}
                 disabled={(showClarification ? false : !input.trim()) || isWeaving || isSubmittingClarification}
-                aria-label="Execute"
-                className="p-0.5 rounded text-(--accent-gold) disabled:text-(--text-secondary)/30 transition"
+                aria-label="Send"
               >
-                <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
-              </button>
+                <Send className="size-3.5" />
+              </Button>
             </div>
           </div>
         </section>
 
-        <section className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} sm:flex flex-1 flex-col bg-(--bg-base) min-w-0`}>
-          <div className="flex items-center gap-2 px-3 border-b border-(--border-hairline) shrink-0 h-8 bg-(--bg-base)">
-            <div className="flex items-center bg-(--bg-surface-2) rounded p-0.5 border border-(--border-hairline) shrink-0">
-              {['preview', 'code'].map((v) => (
-                <button
-                  key={v}
-                  onClick={() => handleViewChange(v)}
-                  className={`px-2 py-0.5 rounded-sm text-[9px] font-bold uppercase tracking-wider transition-colors ${activeView === v ? 'bg-(--bg-base) text-(--accent-gold)' : 'text-(--text-secondary) hover:text-(--text-primary)'}`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
+        <section className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col bg-white md:flex`}>
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-100 px-3">
+            <SegmentedControl
+              ariaLabel="View mode"
+              size="sm"
+              options={[
+                { value: 'preview', label: 'Preview' },
+                { value: 'code', label: 'Code' },
+              ]}
+              value={activeView}
+              onChange={handleViewChange}
+            />
 
             {activeView === 'preview' ? (
               <>
-                <div className="flex-1 bg-(--bg-surface) rounded px-2 py-0.5 font-mono text-[10px] text-(--text-secondary) truncate border border-(--border-hairline)">
+                <div className="min-w-0 flex-1 truncate rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-1 font-mono text-[11px] text-neutral-500">
                   {previewUrl ? previewUrl.replace(/^https?:\/\//, '') : `localhost:8000/${slug}`}
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => setRefreshKey((k) => k + 1)}
                   disabled={!previewUrl}
-                  aria-label="Refresh"
-                  className="p-1 text-(--text-secondary) hover:text-(--text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label="Refresh preview"
                 >
-                  <RefreshCw className="w-3 h-3" />
-                </button>
-                <button
+                  <RefreshCw className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noopener,noreferrer')}
                   disabled={!previewUrl}
-                  aria-label="Open tab"
-                  className="p-1 text-(--text-secondary) hover:text-(--text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label="Open preview in new tab"
                 >
-                  <ExternalLink className="w-3 h-3" />
-                </button>
+                  <ExternalLink className="size-3.5" />
+                </Button>
               </>
             ) : (
-              <div className="flex-1 font-mono text-[10px] text-(--text-secondary) truncate">
+              <div className="min-w-0 flex-1 truncate font-mono text-[11px] text-neutral-500">
                 {selectedFile || 'Project files'}
               </div>
             )}
 
-            <div className="sm:hidden">
-              <DeviceToggle />
+            <div className="md:hidden">
+              <DeviceToggle value={device} onChange={setDevice} />
             </div>
           </div>
 
           {activeView === 'code' ? (
-            <div className="flex-1 flex overflow-hidden bg-(--bg-surface-2)">
-              <div className="w-32 shrink-0 border-r border-(--border-hairline) overflow-y-auto bg-(--bg-base)">
-                {filesLoading && (
-                  <p className="p-2 text-[10px] font-mono text-(--text-secondary)">Loading files...</p>
-                )}
-                {filesError && (
-                  <p className="p-2 text-[10px] font-mono text-red-400">{filesError}</p>
-                )}
-                {!filesLoading && !filesError && files.length === 0 && (
-                  <p className="p-2 text-[10px] font-mono text-(--text-secondary)">No files yet.</p>
-                )}
+            <div className="flex flex-1 overflow-hidden">
+              <div className="w-40 shrink-0 overflow-y-auto border-r border-neutral-100 bg-neutral-50">
+                {filesLoading ? (
+                  <p className="p-3 text-xs text-neutral-400">Loading files…</p>
+                ) : null}
+                {filesError ? (
+                  <p className="p-3 text-xs text-rose-600">{filesError}</p>
+                ) : null}
+                {!filesLoading && !filesError && files.length === 0 ? (
+                  <p className="p-3 text-xs text-neutral-400">No files yet.</p>
+                ) : null}
                 {files.map((f) => (
                   <button
                     key={f.path}
+                    type="button"
                     onClick={() => setSelectedFile(f.path)}
                     title={f.path}
-                    className={`block w-full text-left px-2 py-1 text-[10px] font-mono truncate transition-colors ${
+                    className={`block w-full cursor-pointer truncate px-3 py-1.5 text-left font-mono text-[11px] transition-colors ${
                       selectedFile === f.path
-                        ? 'bg-(--bg-surface-2) text-(--accent-gold)'
-                        : 'text-(--text-secondary) hover:text-(--text-primary)'
+                        ? 'bg-white font-medium text-neutral-900'
+                        : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                   >
                     {f.path}
                   </button>
                 ))}
               </div>
-              <pre className="flex-1 overflow-auto p-3 text-[10px] font-mono text-(--text-primary) leading-normal whitespace-pre-wrap break-words">
+              <pre className="flex-1 overflow-auto bg-white p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-neutral-700">
                 {selectedFileContent || 'Select a file to view its contents.'}
               </pre>
             </div>
           ) : (
-            <div className="flex-1 p-2.5 bg-(--bg-surface-2) flex items-center justify-center overflow-hidden">
+            <div className="flex flex-1 items-center justify-center overflow-hidden bg-neutral-50 p-3 md:p-5">
               {previewReady && previewUrl ? (
-                device === 'mobile' ? (
-                  <div className="border-[4px] border-(--bg-surface) rounded-lg overflow-hidden h-full max-h-[500px] w-[260px] shadow-md bg-white">
-                    <iframe key={refreshKey} title="Preview" src={previewUrl} className="w-full h-full" />
-                  </div>
-                ) : (
-                  <div className="w-full h-full rounded overflow-hidden border border-(--border-hairline) bg-white shadow-sm">
-                    <iframe key={refreshKey} title="Preview" src={previewUrl} className="w-full h-full" />
-                  </div>
-                )
+                previewFrame(previewUrl)
               ) : previewReady ? (
-                device === 'mobile' ? (
-                  <div className="border-[4px] border-(--bg-surface) rounded-lg overflow-hidden h-full max-h-[500px] w-[260px] shadow-md bg-white">
-                    <iframe title="Preview" srcDoc={fallbackPreviewSrcDoc} className="w-full h-full" />
-                  </div>
-                ) : (
-                  <div className="w-full h-full rounded overflow-hidden border border-(--border-hairline) bg-white shadow-sm">
-                    <iframe title="Preview" srcDoc={fallbackPreviewSrcDoc} className="w-full h-full" />
-                  </div>
-                )
+                previewFrame(fallbackPreviewSrcDoc, true)
               ) : (
-                <div className="w-full h-full rounded border border-dashed border-(--border-hairline) flex flex-col items-center justify-center p-4 text-center bg-(--bg-base)">
-                  <ThreadField className="opacity-5 w-6 h-6 mb-1.5" />
-                  <p className="text-[10px] font-mono text-(--text-secondary) tracking-tight max-w-[180px] leading-normal">
-                    {isWeaving ? 'Building preview...' : 'Ready. Type a response to generate.'}
+                <div className="flex h-full w-full flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-white p-6 text-center">
+                  <ThreadMark className="size-6 text-neutral-300" />
+                  <p className="mt-3 max-w-[220px] text-xs leading-relaxed text-neutral-400">
+                    {isWeaving ? 'Building preview…' : 'Your app preview will appear here.'}
                   </p>
                 </div>
               )}
@@ -769,16 +756,6 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
           )}
         </section>
       </div>
-
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(2px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in { animation: fadeIn 0.1s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .scrollbar-none::-webkit-scrollbar { display: none; }
-        .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
     </div>
   )
 }
