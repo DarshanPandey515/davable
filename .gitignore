@@ -93,6 +93,11 @@ out/
 *.swp
 *.swo
 
+# --- AI / agent skills ---
+opensource-ui/
+skills/
+.opencode/
+
 # --- Misc ---
 coverage/
 *.tgz
