@@ -91,3 +91,8 @@ export async function getConversation(conversationId) {
   if (!res.ok) throw new Error('Failed to load conversation')
   return res.json()
 }
+
+export async function deleteConversation(conversationId) {
+  const res = await apiFetch(`/conversations/${conversationId}/`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete project')
+}

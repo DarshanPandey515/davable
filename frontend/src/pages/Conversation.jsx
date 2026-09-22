@@ -1,14 +1,32 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ThreadMark,
-  ChevronLeft,
-  Monitor,
-  Smartphone,
-  RefreshCw,
-  ExternalLink,
-  Send,
-} from '../icons'
-import { Button, SegmentedControl, SpinLoader, SystemAlert, TextField, BuildSteps } from '../ui'
+  ChevronLeftIcon,
+  ExternalLinkIcon,
+  MonitorIcon,
+  RefreshCwIcon,
+  SendHorizontalIcon,
+  SmartphoneIcon,
+} from 'lucide-react'
+
+import { ThreadMark } from '../icons'
+import { Button, SegmentedControl, SpinLoader, TextField, ThemeToggle, BuildSteps } from '../ui'
+import { Tree } from '../file-tree'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { FieldGroup } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Message, MessageAvatar, MessageContent } from '@/components/ui/message'
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@/components/ui/message-scroller'
+import { Bubble, BubbleContent } from '@/components/ui/bubble'
 
 import { API_BASE, getToken, getConversation } from '../api'
 
@@ -50,6 +68,42 @@ function deriveProjectName(prompt) {
   if (!prompt) return 'Untitled Project'
   const words = prompt.trim().split(/\s+/).slice(0, 4).join(' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+function buildFileTree(files) {
+  const nodes = []
+  const folders = new Map()
+  const folderIds = []
+  const filePaths = new Set()
+
+  const sorted = [...files].sort((a, b) =>
+    a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }),
+  )
+
+  for (const file of sorted) {
+    const parts = file.path.split('/')
+    let level = nodes
+    let prefix = ''
+
+    parts.forEach((part, index) => {
+      prefix = prefix ? `${prefix}/${part}` : part
+      if (index === parts.length - 1) {
+        level.push({ id: file.path, name: part, type: 'file' })
+        filePaths.add(file.path)
+        return
+      }
+      let folder = folders.get(prefix)
+      if (!folder) {
+        folder = { id: prefix, name: part, type: 'folder', children: [] }
+        folders.set(prefix, folder)
+        folderIds.push(prefix)
+        level.push(folder)
+      }
+      level = folder.children
+    })
+  }
+
+  return { nodes, folderIds, filePaths }
 }
 
 function buildPreviewHtml(projectName, prompt) {
@@ -124,8 +178,8 @@ function buildPreviewHtml(projectName, prompt) {
 }
 
 const DEVICE_OPTIONS = [
-  { value: 'desktop', ariaLabel: 'Desktop view', icon: <Monitor className="size-3.5" /> },
-  { value: 'mobile', ariaLabel: 'Mobile view', icon: <Smartphone className="size-3.5" /> },
+  { value: 'desktop', ariaLabel: 'Desktop view', icon: <MonitorIcon /> },
+  { value: 'mobile', ariaLabel: 'Mobile view', icon: <SmartphoneIcon /> },
 ]
 
 function DeviceToggle({ value, onChange }) {
@@ -140,35 +194,41 @@ function DeviceToggle({ value, onChange }) {
   )
 }
 
-function Message({ message }) {
+function ChatMessage({ message }) {
   if (message.role === 'user') {
     return (
-      <div className="animate-enter flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-neutral-900 px-3.5 py-2 text-sm leading-relaxed text-white">
-          {message.text}
-        </div>
-      </div>
+      <Message align="end">
+        <MessageContent>
+          <Bubble variant="default">
+            <BubbleContent>{message.text}</BubbleContent>
+          </Bubble>
+        </MessageContent>
+      </Message>
     )
   }
 
   const isError = typeof message.text === 'string' && message.text.startsWith('Error:')
 
   return (
-    <div className="animate-enter flex gap-2.5">
-      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-neutral-100 bg-neutral-50">
-        <ThreadMark className="size-3.5 text-neutral-500" />
-      </span>
-      <div className="min-w-0 flex-1 space-y-2">
+    <Message>
+      <MessageAvatar>
+        <ThreadMark className="size-4 text-muted-foreground" />
+      </MessageAvatar>
+      <MessageContent>
         {message.steps ? <BuildSteps steps={message.steps} /> : null}
         {message.text ? (
           isError ? (
-            <SystemAlert tone="error" description={message.text.replace(/^Error:\s*/, '')} />
+            <Alert variant="destructive">
+              <AlertDescription>{message.text.replace(/^Error:\s*/, '')}</AlertDescription>
+            </Alert>
           ) : (
-            <p className="text-sm leading-relaxed text-neutral-700">{message.text}</p>
+            <Bubble variant="muted">
+              <BubbleContent>{message.text}</BubbleContent>
+            </Bubble>
           )
         ) : null}
-      </div>
-    </div>
+      </MessageContent>
+    </Message>
   )
 }
 
@@ -195,20 +255,9 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
   const [filesLoading, setFilesLoading] = useState(false)
   const [filesError, setFilesError] = useState(null)
 
-  const scrollRef = useRef(null)
   const startedRef = useRef(false)
   const abortControllerRef = useRef(null)
   const buildStepsMsgIdRef = useRef(null)
-
-  const scrollToBottom = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
 
   const addMessage = (role, text, steps = null) => {
     setMessages(prev => [...prev, {
@@ -293,7 +342,6 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
       default:
         console.log('Unknown event:', eventType, data);
     }
-    scrollToBottom();
   };
 
   const startConversation = async () => {
@@ -521,43 +569,46 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
   const fallbackPreviewSrcDoc = buildPreviewHtml(projectName, displayPrompt)
   const slug = projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'untitled'
   const selectedFileContent = files.find((f) => f.path === selectedFile)?.content || ''
+  const { nodes: fileTree, folderIds, filePaths } = useMemo(() => buildFileTree(files), [files])
 
   const renderClarification = () => {
     if (!showClarification || !clarificationQuestions.length) return null
 
     return (
-      <div className="animate-enter space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-        <div>
-          <h3 className="text-xs font-semibold tracking-tight text-neutral-900">A few details</h3>
-          <p className="mt-0.5 text-xs text-neutral-500">Answer the prompts so the build can continue.</p>
-        </div>
-        {clarificationQuestions.map((q, idx) => (
-          <TextField
-            key={idx}
-            label={q}
-            required
-            value={clarificationAnswers[idx] || ''}
-            onChange={(e) => setClarificationAnswers({
-              ...clarificationAnswers,
-              [idx]: e.target.value
-            })}
-            placeholder="Your answer"
+      <div className="animate-enter rounded-xl border bg-muted/50 p-4">
+        <FieldGroup className="gap-3">
+          <div>
+            <h3 className="text-xs font-semibold tracking-tight text-foreground">A few details</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Answer the prompts so the build can continue.</p>
+          </div>
+          {clarificationQuestions.map((q, idx) => (
+            <TextField
+              key={idx}
+              label={q}
+              required
+              value={clarificationAnswers[idx] || ''}
+              onChange={(e) => setClarificationAnswers({
+                ...clarificationAnswers,
+                [idx]: e.target.value
+              })}
+              placeholder="Your answer"
+              disabled={isSubmittingClarification}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleClarificationSubmit()
+                }
+              }}
+            />
+          ))}
+          <Button
+            className="w-full"
+            onClick={handleClarificationSubmit}
             disabled={isSubmittingClarification}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleClarificationSubmit()
-              }
-            }}
-          />
-        ))}
-        <Button
-          className="w-full"
-          onClick={handleClarificationSubmit}
-          disabled={isSubmittingClarification}
-        >
-          {isSubmittingClarification ? 'Sending' : 'Apply answers'}
-        </Button>
+          >
+            {isSubmittingClarification ? 'Sending' : 'Apply answers'}
+          </Button>
+        </FieldGroup>
       </div>
     )
   }
@@ -566,40 +617,41 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
     const iframeProps = isSrcDoc ? { srcDoc: src } : { src }
     if (device === 'mobile') {
       return (
-        <div className="h-full max-h-[560px] w-[268px] overflow-hidden rounded-[2rem] border-[6px] border-neutral-900 bg-white">
+        <div className="h-full max-h-[560px] w-[268px] overflow-hidden rounded-[2rem] border-[6px] border-neutral-700 bg-background">
           <iframe key={refreshKey} title="Preview" className="h-full w-full" {...iframeProps} />
         </div>
       )
     }
     return (
-      <div className="h-full w-full overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      <div className="h-full w-full overflow-hidden rounded-xl border bg-background">
         <iframe key={refreshKey} title="Preview" className="h-full w-full" {...iframeProps} />
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen w-full flex-col bg-white font-sans text-neutral-900">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-neutral-100 px-3 md:px-4">
+    <div className="flex h-screen w-full flex-col bg-background font-sans text-foreground">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-4">
         <Button variant="ghost" size="icon" onClick={handleBack} aria-label="Back">
-          <ChevronLeft className="size-4" />
+          <ChevronLeftIcon />
         </Button>
-        <input
+        <Input
           value={projectName}
           onChange={(e) => setProjectName(e.target.value)}
           aria-label="Project name"
-          className="w-40 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-medium outline-none transition-colors hover:border-neutral-200 focus:border-neutral-900 md:w-56"
+          className="w-40 border-transparent bg-transparent px-1.5 font-medium shadow-none focus-visible:border-ring md:w-56"
         />
         <div className="flex-1" />
         <div className="hidden md:block">
           <DeviceToggle value={device} onChange={setDevice} />
         </div>
+        <ThemeToggle />
         <Button size="sm" disabled={!previewReady}>
           Publish
         </Button>
       </header>
 
-      <div className="flex shrink-0 border-b border-neutral-100 md:hidden">
+      <div className="flex shrink-0 border-b md:hidden">
         {['chat', 'preview'].map((tab) => (
           <button
             key={tab}
@@ -607,8 +659,8 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
             onClick={() => setMobileTab(tab)}
             className={`flex-1 cursor-pointer py-2.5 text-xs font-medium capitalize transition-colors ${
               mobileTab === tab
-                ? 'border-b-2 border-neutral-900 text-neutral-900'
-                : 'text-neutral-400'
+                ? 'border-b-2 border-foreground text-foreground'
+                : 'text-muted-foreground'
             }`}
           >
             {tab}
@@ -618,24 +670,43 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
 
       <div className="flex flex-1 overflow-hidden">
         <section
-          className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} w-full shrink-0 flex-col border-neutral-100 bg-white md:flex md:w-[320px] md:border-r lg:w-[380px]`}
+          className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} w-full shrink-0 flex-col border-border bg-background md:flex md:w-[320px] md:border-r lg:w-[380px]`}
         >
-          <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-4">
-            {messages.map((m) => (
-              <Message key={m.id} message={m} />
-            ))}
-            {renderClarification()}
-            {isWeaving && !showClarification && (
-              <div className="flex items-center gap-2 text-xs text-neutral-400">
-                <SpinLoader size="sm" label="Working" />
-                <span>Working…</span>
-              </div>
-            )}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+              <MessageScroller>
+                <MessageScrollerViewport>
+                  <MessageScrollerContent className="p-4">
+                    {messages.map((m) => (
+                      <MessageScrollerItem key={m.id} messageId={m.id}>
+                        <ChatMessage message={m} />
+                      </MessageScrollerItem>
+                    ))}
+                    {showClarification ? (
+                      <MessageScrollerItem>{renderClarification()}</MessageScrollerItem>
+                    ) : null}
+                    {isWeaving && !showClarification ? (
+                      <MessageScrollerItem>
+                        <Message>
+                          <MessageContent>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <SpinLoader size="sm" label="Working" />
+                              <span>Working…</span>
+                            </div>
+                          </MessageContent>
+                        </Message>
+                      </MessageScrollerItem>
+                    ) : null}
+                  </MessageScrollerContent>
+                </MessageScrollerViewport>
+                <MessageScrollerButton />
+              </MessageScroller>
+            </MessageScrollerProvider>
           </div>
 
-          <div className="border-t border-neutral-100 p-3">
-            <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 transition-colors focus-within:border-neutral-900">
-              <input
+          <div className="border-t p-3">
+            <InputGroup>
+              <InputGroupInput
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -644,22 +715,24 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
                 placeholder={
                   isWeaving ? 'Processing…' : showClarification ? 'Awaiting answers…' : 'Ask for a change…'
                 }
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-neutral-400 disabled:opacity-50"
+                aria-label="Ask for a change"
               />
-              <Button
-                size="icon"
-                onClick={showClarification ? handleClarificationSubmit : handleSend}
-                disabled={(showClarification ? false : !input.trim()) || isWeaving || isSubmittingClarification}
-                aria-label="Send"
-              >
-                <Send className="size-3.5" />
-              </Button>
-            </div>
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  size="icon-sm"
+                  onClick={showClarification ? handleClarificationSubmit : handleSend}
+                  disabled={(showClarification ? false : !input.trim()) || isWeaving || isSubmittingClarification}
+                  aria-label="Send"
+                >
+                  <SendHorizontalIcon />
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
           </div>
         </section>
 
-        <section className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col bg-white md:flex`}>
-          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-neutral-100 px-3">
+        <section className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col bg-background md:flex`}>
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
             <SegmentedControl
               ariaLabel="View mode"
               size="sm"
@@ -673,7 +746,7 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
 
             {activeView === 'preview' ? (
               <>
-                <div className="min-w-0 flex-1 truncate rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-1 font-mono text-[11px] text-neutral-500">
+                <div className="min-w-0 flex-1 truncate rounded-md border bg-muted px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
                   {previewUrl ? previewUrl.replace(/^https?:\/\//, '') : `localhost:8000/${slug}`}
                 </div>
                 <Button
@@ -683,7 +756,7 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
                   disabled={!previewUrl}
                   aria-label="Refresh preview"
                 >
-                  <RefreshCw className="size-3.5" />
+                  <RefreshCwIcon />
                 </Button>
                 <Button
                   variant="ghost"
@@ -692,11 +765,11 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
                   disabled={!previewUrl}
                   aria-label="Open preview in new tab"
                 >
-                  <ExternalLink className="size-3.5" />
+                  <ExternalLinkIcon />
                 </Button>
               </>
             ) : (
-              <div className="min-w-0 flex-1 truncate font-mono text-[11px] text-neutral-500">
+              <div className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
                 {selectedFile || 'Project files'}
               </div>
             )}
@@ -708,49 +781,54 @@ export default function Conversation({ initialPrompt, resumeConversationId, onBa
 
           {activeView === 'code' ? (
             <div className="flex flex-1 overflow-hidden">
-              <div className="w-40 shrink-0 overflow-y-auto border-r border-neutral-100 bg-neutral-50">
-                {filesLoading ? (
-                  <p className="p-3 text-xs text-neutral-400">Loading files…</p>
-                ) : null}
-                {filesError ? (
-                  <p className="p-3 text-xs text-rose-600">{filesError}</p>
-                ) : null}
-                {!filesLoading && !filesError && files.length === 0 ? (
-                  <p className="p-3 text-xs text-neutral-400">No files yet.</p>
-                ) : null}
-                {files.map((f) => (
-                  <button
-                    key={f.path}
-                    type="button"
-                    onClick={() => setSelectedFile(f.path)}
-                    title={f.path}
-                    className={`block w-full cursor-pointer truncate px-3 py-1.5 text-left font-mono text-[11px] transition-colors ${
-                      selectedFile === f.path
-                        ? 'bg-white font-medium text-neutral-900'
-                        : 'text-neutral-500 hover:text-neutral-900'
-                    }`}
-                  >
-                    {f.path}
-                  </button>
-                ))}
-              </div>
-              <pre className="flex-1 overflow-auto bg-white p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-neutral-700">
-                {selectedFileContent || 'Select a file to view its contents.'}
-              </pre>
+              <ScrollArea className="w-52 shrink-0 border-r bg-muted/40">
+                <div className="p-1.5">
+                  {filesLoading ? (
+                    <p className="p-2 text-xs text-muted-foreground">Loading files…</p>
+                  ) : null}
+                  {filesError ? (
+                    <p className="p-2 text-xs text-destructive">{filesError}</p>
+                  ) : null}
+                  {!filesLoading && !filesError && files.length === 0 ? (
+                    <p className="p-2 text-xs text-muted-foreground">No files yet.</p>
+                  ) : null}
+                  {files.length > 0 ? (
+                    <Tree
+                      key={files.length}
+                      elements={fileTree}
+                      initialSelectedId={selectedFile || undefined}
+                      initialExpandedItems={folderIds}
+                      onSelect={(id) => {
+                        if (filePaths.has(id)) setSelectedFile(id)
+                      }}
+                    />
+                  ) : null}
+                </div>
+              </ScrollArea>
+              <ScrollArea className="min-h-0 flex-1 bg-background">
+                <pre className="p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-foreground">
+                  {selectedFileContent || 'Select a file to view its contents.'}
+                </pre>
+              </ScrollArea>
             </div>
           ) : (
-            <div className="flex flex-1 items-center justify-center overflow-hidden bg-neutral-50 p-3 md:p-5">
+            <div className="flex flex-1 items-center justify-center overflow-hidden bg-muted/40 p-3 md:p-5">
               {previewReady && previewUrl ? (
                 previewFrame(previewUrl)
               ) : previewReady ? (
                 previewFrame(fallbackPreviewSrcDoc, true)
               ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-white p-6 text-center">
-                  <ThreadMark className="size-6 text-neutral-300" />
-                  <p className="mt-3 max-w-[220px] text-xs leading-relaxed text-neutral-400">
-                    {isWeaving ? 'Building preview…' : 'Your app preview will appear here.'}
-                  </p>
-                </div>
+                <Empty className="h-full w-full border border-dashed bg-background">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <ThreadMark />
+                    </EmptyMedia>
+                    <EmptyTitle>{isWeaving ? 'Building preview…' : 'Preview'}</EmptyTitle>
+                    <EmptyDescription>
+                      {isWeaving ? 'Your app is being generated.' : 'Your app preview will appear here.'}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               )}
             </div>
           )}

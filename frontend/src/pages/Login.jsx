@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { ArrowRight, Github, Google } from '../icons'
+import { ArrowRightIcon } from 'lucide-react'
+import { Github, Google } from '../icons'
 import { AuthShell, Button, Divider, LinkButton, SystemAlert, TextField } from '../ui'
 import { login, oauthLoginUrl } from '../api'
 
@@ -38,7 +39,7 @@ export default function Login({ onSuccess, onGoToSignup }) {
         <button
           type="button"
           onClick={onGoToSignup}
-          className="cursor-pointer font-medium text-neutral-500 transition-colors hover:text-neutral-900"
+          className="cursor-pointer font-medium text-ink-muted transition-colors hover:text-ink"
         >
           No account? Sign up
         </button>
@@ -73,12 +74,12 @@ export default function Login({ onSuccess, onGoToSignup }) {
 
       <Button className="w-full" onClick={submit} disabled={!email.trim() || !password || isLoading}>
         {isLoading ? 'Signing in' : 'Sign in'}
-        <ArrowRight className="size-3.5" />
+        <ArrowRightIcon data-icon="inline-end" />
       </Button>
 
       <Divider />
 
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         <LinkButton href={oauthLoginUrl('google')} className="w-full">
           <Google className="size-4" />
           Continue with Google

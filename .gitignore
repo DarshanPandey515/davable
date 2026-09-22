@@ -38,6 +38,9 @@ media/
 staticfiles/
 static/
 
+# Generated sandbox workspaces
+backend/agents/workspace/
+
 # Test / coverage / tools
 htmlcov/
 .tox/

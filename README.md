@@ -1,126 +1,140 @@
 # mini-lovable
 
-**mini-lovable** is a full-stack application that leverages an AI agent to build and modify React web applications based on natural language prompts. It features a Django backend, a React frontend, and a multi-step AI agent powered by the Groq API. The agent can plan an implementation, generate code, scaffold a project, run build checks, and automatically debug errors.
+Full-stack AI app builder. Describe a web app in plain language → the agent plans, generates, builds, and fixes a working React + Vite + Tailwind application running in an E2B sandbox.
 
-## Features
+## System Architecture
 
-- **AI-Powered Code Generation**: Describe a web app, and the AI agent builds a React + Vite + Tailwind CSS implementation.
-- **Multi-Step Agent Workflow**: The process is broken down into planning, code generation, building, and automated fixing.
-- **Interactive Development**: The agent streams its progress in real-time, showing its plan, live build steps, and any errors it encounters.
-- **Automatic Error Correction**: If an initial build fails, a "fixer" agent attempts to diagnose and correct the errors by reading files, editing code, and re-running the build.
-- **Follow-up Edits**: After a project is built, you can ask the agent to make further modifications in plain language.
-- **Live Preview**: See the generated React application in a live preview pane that updates as the agent works.
-- **User Authentication**: Supports email/password credentials as well as OAuth 2.0 for Google and GitHub.
-- **Conversation History**: Past sessions are saved, allowing users to review and resume their work.
+```mermaid
+flowchart TD
+    User[User / Browser] -->|HTTPS + SSE| Frontend[React Frontend (Vite + Tailwind)]
+    Frontend -->|REST API| Backend[Django Backend]
+    Backend -->|Orchestrates| Agent[AI Agent System]
+    Agent -->|Tools (read/write/patch/bash)| Executor[E2B Sandbox]
+    Executor -->|File sync + npm| Project[Generated React App]
+    Project -->|Preview URL| Frontend
 
-## Architecture
+    subgraph Agent["Agent Pipeline"]
+        Planner[Planner] --> CodeGen[CodeGen]
+        CodeGen --> Build{npm run build}
+        Build -- pass --> Done[Preview]
+        Build -- fail --> Fixer[Fixer Agent]
+        Fixer -->|search / read / patch / exec| Executor
+        Fixer -->|retry| Build
+    end
+```
 
-The application is composed of three main parts: a React frontend, a Django backend, and the AI agent system.
+**Components:**
+- **Frontend**: React + Vite + Tailwind v4. Auth (JWT + OAuth), chat UI, live preview iframe, file tree, code viewer.
+- **Backend**: Django + DRF. Auth (JWT, Google/GitHub OAuth), conversations stored in SQLite, SSE streaming for agent progress.
+- **Agent**: Multi-step pipeline using `pydantic-ai` + Groq `gpt-oss-120b`.
+  - **Planner**: Distills prompt → brief + concrete steps, or asks clarifying questions.
+  - **CodeGen**: Emits all files at once as structured JSON (React + JSX + Tailwind).
+  - **Fixer**: Tool-using agent (`search`, `read_file`, `apply_patch`, `create_file`, `delete`, `exec`). Creates missing pages/routes, wires `react-router-dom`, re-runs `npm run build` until green or budget exhausted.
+  - **Executor**: E2B sandbox per project. `write_file`/`sync` keeps host↔sandbox in lockstep. `npm run build` and `npm run dev` run inside the sandbox; preview served on `*.e2b.app`.
 
-- **Frontend**: A React application built with Vite and styled with Tailwind CSS. It provides the UI for authentication, starting new projects, interacting with the agent via a chat interface, and viewing the live preview.
+## Project Structure
 
-- **Backend**: A Django and Django REST Framework application that manages:
-  - User authentication (JWT, OAuth 2.0).
-  - Conversation and message state, stored in a PostgreSQL database.
-  - API endpoints for the frontend to interact with the agent.
-  - Streaming agent progress to the client using Server-Sent Events (SSE).
+```
+mini-lovable/
+├── backend/                    # Django project + agent
+│   ├── config/                 # Django settings, URLs, wsgi
+│   ├── builder/                # Auth, conversations, REST + SSE views
+│   └── agents/                 # Core agent logic
+│       ├── aci.py              # Narrow tool surface (search/read/patch/exec)
+│       ├── policy.py           # Path containment + output caps
+│       ├── scaffold.py         # Tailwind entry + template CSS neutralisation
+│       ├── executor.py         # E2B sandbox + host↔sandbox sync
+│       ├── planner.py          # Prompt → brief + steps
+│       ├── codegen.py          # Prompt + steps → all files (JSON)
+│       ├── system.py           # System prompts (planner/codegen/fixer)
+│       ├── agent.py            # Orchestration, fixer loop, follow-ups
+│       ├── store.py            # Per-project state (events, build status, fix attempts)
+│       ├── state.py            # Conversation DB helpers
+│       └── tests_*.py          # Assert-based unit tests
+├── frontend/                   # React + Vite + Tailwind UI
+│   ├── src/
+│   │   ├── components/ui/      # shadcn/ui (Button, Card, Alert, etc.)
+│   │   ├── pages/              # Landing, Home, Conversation, Auth
+│   │   └── icons.jsx           # Brand marks
+│   └── vite.config.js
+└── .env                        # GROQ_API_KEY, E2B_API_KEY, secrets
+```
 
-- **AI Agent**: A multi-component system using `pydantic-ai` and the Groq API to understand prompts and generate code.
-  - **Planner**: Analyzes the initial prompt to create a summary and a list of concrete implementation steps. It can also ask for clarification if the prompt is ambiguous.
-  - **CodeGen**: Generates React, JSX, and CSS files based on the planner's output.
-  - **Fixer**: A tool-using agent that can `read`, `write`, `edit` files and run `bash` commands (like `npm run build`) to debug the generated project.
+## Key Capabilities
 
+- **Initial build**: Prompt → plan → scaffold → codegen → build → auto-fix loop → preview.
+- **Follow-ups**: “Add a landing page at `/` and move the app to `/todos`.” Fixer creates `src/Landing.jsx`, wires `react-router-dom` in `main.jsx`, re-builds, and self-heals if codegen overwrites the Tailwind entry.
+- **Sandboxed execution**: Every project lives in its own E2B sandbox with isolated `node_modules`; host workspace mirrors sandbox for file browsing.
+- **Streaming UX**: Agent progress (plan, steps, tool calls, build output) streamed via SSE to the chat UI.
+- **Auth & history**: Email/password + Google/GitHub OAuth; conversations persisted with status, preview URL, and file tree.
 
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
-
 - Python 3.10+
-- Node.js and npm
-- PostgreSQL
+- Node.js 20+
+- E2B API key
+- Groq API key
 
-### 1. Clone the Repository
+### 1. Clone & Configure
 
 ```bash
 git clone https://github.com/DarshanPandey515/mini-lovable.git
 cd mini-lovable
+cp .env.example .env   # fill in GROQ_API_KEY, E2B_API_KEY, etc.
 ```
 
-### 2. Environment Configuration
-
-Create a `.env` file in the root directory and add the following environment variables.
-
-```env
-# Django
-DJANGO_SECRET_KEY=your-django-secret-key
-DEBUG=true
-ALLOWED_HOSTS=localhost,127.0.0.1
-
-# Database
-DB_NAME=lovable
-DB_USER=postgres
-DB_PASSWORD=your-db-password
-DB_HOST=localhost
-DB_PORT=5432
-
-# AI Agent
-GROQ_API_KEY=your-groq-api-key
-
-# OAuth (Optional)
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-GITHUB_CLIENT_ID=your-github-client-id
-GITHUB_CLIENT_SECRET=your-github-client-secret
-
-# URLs
-FRONTEND_URL=http://localhost:5173
-```
-
-### 3. Backend Setup
+### 2. Backend
 
 ```bash
-# Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run database migrations
-python manage.py migrate
-
-# Start the Django server
-python manage.py runserver
+python -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+python backend/manage.py migrate
+python backend/manage.py runserver
 ```
 
-The backend will be running at `http://127.0.0.1:8000`.
-
-### 4. Frontend Setup
-
-Open a new terminal window.
+### 3. Frontend
 
 ```bash
-# Navigate to the frontend directory
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the Vite development server
 npm run dev
 ```
 
-The frontend will be running at `http://localhost:5173`. You can now open this URL in your browser to use the application.
+Open `http://localhost:5173`.
 
-## Agent Workflow
+## Agent Workflow (Updated)
 
-The core of this project is the autonomous agent's workflow for building an application.
+1. **Prompt** → **Planner** returns `{brief, todos[]}` or clarification questions.
+2. **Scaffold** creates a fresh Vite project, installs `react-router-dom` + `tailwindcss @tailwindcss/vite`, writes a clean `src/index.css` with `@import "tailwindcss"`, and blanks `src/App.css`.
+3. **CodeGen** emits all files at once (`App.jsx`, components, styles).
+4. **Build** runs `npm run build`. If it fails:
+   - **Fixer** searches/reads/patches/creates files, then re-runs `npm run build`.
+   - Capped per-error fingerprint (3 retries) + global step budget (15 steps).
+   - If the build still fails on the same error → escalate instead of looping.
+5. **Preview** starts `npm run dev` in the sandbox; URL streamed to the UI.
+6. **Follow-up**: user asks a change → snapshot → fixer applies → build gate → auto-revert on regression.
 
-1.  **Prompt**: A user submits a prompt, such as "build a simple todo app".
-2.  **Planning**: The `Planner` agent analyzes the prompt. If it's clear, it generates a one-sentence summary and a list of implementation steps (e.g., "Create a state for tasks", "Render a list of tasks", "Add an input field and button to add tasks").
-3.  **Scaffolding**: The system programmatically creates a new project directory and scaffolds a standard Vite + React project inside it.
-4.  **Code Generation**: The `CodeGen` agent receives the plan and generates the content for all necessary files (`App.jsx`, `index.css`, etc.) as a single structured JSON object.
-5.  **Build**: The system writes the generated files to the project directory and runs `npm run build` to check for errors.
-6.  **Fixing**: If the build fails, the `Fixer` agent is triggered. It is provided with the build error output and uses its tools (`read`, `edit`, `bash`) to attempt to fix the code, with a limited number of steps. It will re-run `npm run build` to verify its fix.
-7.  **Completion**: Once the build is successful, the process is complete, and the live preview is updated. All steps are streamed to the user in real-time.
+## Environment Variables
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `GROQ_API_KEY` | yes | Groq API for `gpt-oss-120b` |
+| `E2B_API_KEY` | yes | E2B sandbox access |
+| `DJANGO_SECRET_KEY` | yes | Django signing |
+| `DEBUG` | no | `true`/`false` |
+| `ALLOWED_HOSTS` | no | Comma-separated |
+| `GOOGLE_CLIENT_ID/SECRET` | no | Google OAuth |
+| `GITHUB_CLIENT_ID/SECRET` | no | GitHub OAuth |
+| `FRONTEND_URL` | no | CORS origin for OAuth redirects |
+
+## Testing
+
+```bash
+cd backend
+python -m agents.tests_aci      # ACI tools + policy
+python -m agents.tests_state    # Project state store
+python -m agents.tests_scaffold # Tailwind entry guard
+python manage.py check          # Django system check
+```

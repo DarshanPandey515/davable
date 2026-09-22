@@ -1,7 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { ThreadMark, ArrowRight } from '../icons'
-import { Button, SpinLoader } from '../ui'
-import { listConversations } from '../api'
+import React, { useEffect, useState } from 'react'
+import { ArrowRightIcon, Trash2Icon } from 'lucide-react'
+
+import { ThreadMark } from '../icons'
+import { Button, SpinLoader, ThemeToggle } from '../ui'
+import { Textarea } from '@/components/ui/textarea'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { listConversations, deleteConversation } from '../api'
 
 function timeAgo(isoString) {
   const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000)
@@ -19,7 +37,9 @@ export default function Home({ onStart, onResume, onLogout }) {
   const [isLoading, setIsLoading] = useState(false)
   const [sessions, setSessions] = useState([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
-  const textareaRef = useRef(null)
+  const [deletingId, setDeletingId] = useState(null)
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     listConversations()
@@ -42,90 +62,135 @@ export default function Home({ onStart, onResume, onLogout }) {
     }
   }
 
+  const confirmDelete = async () => {
+    const session = pendingDelete
+    if (!session) return
+    setPendingDelete(null)
+    setDeletingId(session.id)
+    setError('')
+    try {
+      await deleteConversation(session.id)
+      setSessions((prev) => prev.filter((s) => s.id !== session.id))
+    } catch (e) {
+      setError(e.message || 'Failed to delete project')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   return (
-    <div className="flex h-screen w-full flex-col bg-white font-sans text-neutral-900">
-      <header className="flex shrink-0 items-center justify-between border-b border-neutral-100 px-4 py-3 md:px-6">
+    <div className="flex h-screen w-full flex-col bg-background font-sans text-foreground">
+      <header className="flex shrink-0 items-center justify-between border-b px-4 py-3 md:px-6">
         <div className="flex items-center gap-2">
-          <ThreadMark className="size-5 text-neutral-900" />
+          <ThreadMark className="size-5 text-foreground" />
           <span className="font-serif text-lg leading-none">Davable</span>
         </div>
-        {onLogout && (
-          <Button variant="ghost" size="sm" onClick={onLogout}>
-            Log out
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          {onLogout && (
+            <Button variant="ghost" size="sm" onClick={onLogout}>
+              Log out
+            </Button>
+          )}
+        </div>
       </header>
 
       <main className="flex flex-1 justify-center overflow-y-auto px-4 py-10 md:px-6 md:py-16">
-        <div className="animate-enter w-full max-w-xl space-y-8 self-center">
-          <div className="space-y-3">
-            <p className="font-mono text-[10px] tracking-[0.18em] text-neutral-400 uppercase">
+        <div className="animate-enter flex w-full max-w-xl flex-col gap-8 self-center">
+          <div className="flex flex-col gap-3">
+            <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
               AI app builder
             </p>
             <h1 className="font-serif text-3xl leading-tight text-balance md:text-4xl">
               Describe the app you want to weave.
             </h1>
-            <p className="max-w-md text-sm leading-relaxed text-neutral-500">
+            <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
               Give a prompt and the agent plans, builds, and debugs a working React app. Refine it in plain language.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-neutral-100 bg-white p-4">
-            <textarea
-              ref={textareaRef}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={3}
-              autoFocus
-              disabled={isLoading}
-              maxLength={500}
-              placeholder="e.g. a habit tracker with weekly streaks"
-              aria-label="Describe your app"
-              className="w-full resize-none bg-transparent text-sm leading-relaxed text-neutral-900 outline-none placeholder:text-neutral-400 disabled:opacity-50"
-            />
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-neutral-100 pt-3">
-              <span className="flex items-center gap-2 font-mono text-[10px] tracking-tight text-neutral-400">
-                {isLoading ? <SpinLoader size="sm" label="Starting" /> : null}
-                {isLoading ? 'Planning' : 'Ready'}
-              </span>
-              <Button size="md" onClick={submit} disabled={!prompt.trim() || isLoading}>
-                {isLoading ? 'Weaving' : 'Weave'}
-                <ArrowRight className="size-3.5" />
-              </Button>
-            </div>
-          </div>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-          <section className="space-y-2">
+          <Card>
+            <CardContent className="flex flex-col gap-3">
+              <Textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={3}
+                autoFocus
+                disabled={isLoading}
+                maxLength={500}
+                placeholder="e.g. a habit tracker with weekly streaks"
+                aria-label="Describe your app"
+                className="min-h-20 resize-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+              />
+              <div className="flex items-center justify-between gap-3 border-t pt-3">
+                <span className="flex items-center gap-2 font-mono text-[10px] tracking-tight text-muted-foreground">
+                  {isLoading ? <SpinLoader size="sm" label="Starting" /> : null}
+                  {isLoading ? 'Planning' : 'Ready'}
+                </span>
+                <Button onClick={submit} disabled={!prompt.trim() || isLoading}>
+                  {isLoading ? 'Weaving' : 'Weave'}
+                  <ArrowRightIcon data-icon="inline-end" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <section className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between">
-              <h2 className="text-xs font-semibold tracking-tight text-neutral-900">Past sessions</h2>
+              <h2 className="text-xs font-semibold tracking-tight text-foreground">Past sessions</h2>
               {sessionsLoading ? <SpinLoader size="sm" label="Loading sessions" /> : null}
             </div>
 
-            {!sessionsLoading && sessions.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center text-xs text-neutral-400">
-                No sessions yet. Your builds will show up here.
-              </p>
+            {sessionsLoading ? (
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-11 w-full" />
+                <Skeleton className="h-11 w-full" />
+                <Skeleton className="h-11 w-full" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <Empty className="border border-dashed">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ThreadMark />
+                  </EmptyMedia>
+                  <EmptyTitle>No sessions yet</EmptyTitle>
+                  <EmptyDescription>Your builds will show up here.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : (
-              <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-100">
+              <ul className="divide-y overflow-hidden rounded-lg border">
                 {sessions.map((s) => (
-                  <li key={s.id}>
+                  <li key={s.id} className="group flex items-center transition-colors hover:bg-muted/50">
                     <button
                       type="button"
                       onClick={() => onResume(s.id)}
-                      className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-neutral-900"
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
-                      <span
-                        className={`size-1.5 shrink-0 rounded-full ${
-                          s.status === 'complete' ? 'bg-emerald-500' : 'bg-amber-400'
-                        }`}
-                        aria-hidden
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm text-neutral-700">
-                        {s.original_prompt}
+                      <Badge variant={s.status === 'complete' ? 'secondary' : 'outline'} className="shrink-0">
+                        {s.status === 'complete' ? 'ready' : s.status}
+                      </Badge>
+                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">{s.original_prompt}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                        {timeAgo(s.created_at)}
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-neutral-400">{timeAgo(s.created_at)}</span>
                     </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Delete project"
+                      disabled={deletingId === s.id}
+                      onClick={() => setPendingDelete(s)}
+                      className="mr-2 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      {deletingId === s.id ? <SpinLoader size="sm" label="Deleting" /> : <Trash2Icon />}
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -133,6 +198,21 @@ export default function Home({ onStart, onResume, onLogout }) {
           </section>
         </div>
       </main>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Its files and preview will be removed. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

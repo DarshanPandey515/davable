@@ -1,0 +1,15 @@
+Django
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+python-dotenv
+
+# Auth (OAuth)
+Authlib
+
+# Agent
+pydantic-ai[groq]
+groq
+
+# Sandbox
+e2b
