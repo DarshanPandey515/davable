@@ -2,6 +2,8 @@
 
 Full-stack AI app builder. Describe a web app in plain language → the agent plans, generates, builds, and fixes a working React + Vite + Tailwind application running in an E2B sandbox.
 
+<img width="1920" height="936" alt="davable" src="https://github.com/user-attachments/assets/5943df77-2760-4fc0-aa5f-618ecdfa6f71" />
+
 ## System Architecture
 
 ```mermaid
