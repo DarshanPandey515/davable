@@ -6,21 +6,25 @@ Full-stack AI app builder. Describe a web app in plain language → the agent pl
 
 ```mermaid
 flowchart TD
-    User[User / Browser] -->|HTTPS + SSE| Frontend[React Frontend (Vite + Tailwind)]
+    User[User / Browser] -->|HTTPS + SSE| Frontend[React Frontend]
     Frontend -->|REST API| Backend[Django Backend]
-    Backend -->|Orchestrates| Agent[AI Agent System]
-    Agent -->|Tools (read/write/patch/bash)| Executor[E2B Sandbox]
-    Executor -->|File sync + npm| Project[Generated React App]
-    Project -->|Preview URL| Frontend
+    Backend -->|Orchestrates| Agent[AI Agent Pipeline]
+    Agent -->|tools| Executor[E2B Sandbox]
+    Executor -->|file sync| Project[Generated App]
+    Project -->|preview| Frontend
 
-    subgraph Agent["Agent Pipeline"]
-        Planner[Planner] --> CodeGen[CodeGen]
-        CodeGen --> Build{npm run build}
-        Build -- pass --> Done[Preview]
-        Build -- fail --> Fixer[Fixer Agent]
-        Fixer -->|search / read / patch / exec| Executor
-        Fixer -->|retry| Build
+    subgraph Agent
+        Planner
+        CodeGen
+        Build{Build}
+        Fixer
     end
+
+    Planner --> CodeGen
+    CodeGen --> Build
+    Build -- ok --> Fixer
+    Build -- fail --> Fixer
+    Fixer -->|retry| Build
 ```
 
 **Components:**
