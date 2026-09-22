@@ -1,4 +1,4 @@
-# mini-lovable
+# Davable - AI Website Builder
 
 Full-stack AI app builder. Describe a web app in plain language → the agent plans, generates, builds, and fixes a working React + Vite + Tailwind application running in an E2B sandbox.
 
